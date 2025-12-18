@@ -1,4 +1,4 @@
-import { useState,useRef,useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import 'leaflet/dist/leaflet.css';
 import {
   MapContainer,
@@ -7,6 +7,9 @@ import {
   Popup,
   useMapEvents,
 } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 // 起始点
 const initialPosition = [35.6586, 139.7454];
 
@@ -21,7 +24,7 @@ function ClickHandle({ onMapClick }) {
   return null; // 这个组件不需要渲染任何东西，它只是个逻辑"幽灵"
 }
 // --- 新组件: 自动打开气泡的标记 ---
-function AutoOpenMarker({position,children}){
+function AutoOpenMarker({ position, children }) {
   const markerRef = useRef(null);
   useEffect(() => {
     // 组件挂载，自动打开气泡
@@ -33,7 +36,32 @@ function AutoOpenMarker({position,children}){
     <Marker ref={markerRef} position={position}>
       {children}
     </Marker>
-  )
+  );
+}
+
+// --- 新组件: 路线导航 ---
+function RoutingControl() {
+  const map = useMapEvents({});
+
+  useEffect(() => {
+    if (!map) return;
+
+    //  创建导航控件
+    const routingControl = L.Routing.control({
+      waypoints: [
+        L.latLng(35.6586, 139.7454), //起点
+        L.latLng(35.71, 139.8107), //终点
+      ],
+      routeWhileDragging: true, //允许拖拽路线
+      show: true,
+    }).addTo(map);
+    // 组件销毁时，移除控件 (清理垃圾)
+    return () => {
+      map.removeControl(routingControl);
+    };
+  }, [map]);
+
+  return null;
 }
 
 function App() {
@@ -93,6 +121,8 @@ function App() {
             </Popup>
           </AutoOpenMarker>
         ))}
+        {/* 6. 添加导航控件 */}
+        <RoutingControl />
       </MapContainer>
     </div>
   );

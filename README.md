@@ -156,127 +156,87 @@ function AutoOpenMarker({ position, children }) {
   <ClickHandle onMapClick={addNewMarker} />
   ```
 
-这就好比：
+---
 
-- **父组件**说：“给，这是给你的 `onMapClick`。” (发货)
-- **子组件**说：“好的，我只拆开拿 `onMapClick` 这一样东西。” (收货)
+## 💾 5. 下一步挑战：数据持久化 (已实现)
+
+目前数据刷新都不会丢，因为我们用了 `localStorage`。
 
 ---
 
-## 🎨 5. 自定义指南 (Customize)
+## 🚗 6. 进阶挑战：导航功能 (Phase 4 Guide)
 
-既然是"练手"，你可以试试改改这些参数：
+这一节将教你如何为地图添加 **路线导航 (Routing)** 功能。
 
-1.  **换个初始城市**:
-    修改 `App.jsx` 顶部的 `initialPosition` 数组。
+### 工具准备
 
-    - _东京_: `[35.6586, 139.7454]`
-    - _纽约_: `[40.7128, -74.0060]`
+我们需要一个插件 `leaflet-routing-machine`。
 
-2.  **换个地图皮肤 (TileLayer)**:
-    把 `TileLayer` 的 `url` 换成这个（黑夜模式）：
-    `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`
+1. **安装**: 在终端运行 `npm install leaflet-routing-machine`
+2. **原理**: 这个插件会自动请求 OSRM 免费服务器，计算两个坐标之间的路径，并画在地图上。
 
-3.  **改初始缩放**:
-    修改 `zoom={13}`。
-    - `5`: 省级/国家级视图
-    - `18`: 街道级视图
+### 实现步骤 (参考代码)
 
----
+#### Step 1: 引入插件和样式
 
-
-
-## 📝 6. `App.jsx` 完整代码逐行精读 (Code Walkthrough)
-
-这一节将帮你把整个 `App.jsx` 文件的逻辑串起来，就像读故事书一样。
+在 `App.jsx` 顶部加入：
 
 ```javascript
-/* === Part 1: 准备工具 === */
-import { useState, useRef, useEffect } from 'react'; // React 三大件
-import 'leaflet/dist/leaflet.css'; // 没有这个地图会烂掉
-import { ... } from 'react-leaflet'; // 地图组件
+import L from 'leaflet';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css'; // 别忘了 CSS！
+```
 
-/* === Part 2: 辅助组件 (两个帮手) === */
+#### Step 2: 创建控制器组件
 
-// 帮手A: 监听器 (ClickHandle)
-// 任务: 谁点了地图？马上通知老板(父组件)！
-function ClickHandle({ onMapClick }) {
-  useMapEvents({
-    click(e) { onMapClick(e.latlng); } // 拿到坐标，传回去
-  });
-  return null; // 我只干活，不露脸
-}
+这是一个标准的 **"React 包装 Leaflet 插件"** 的写法。
+因为插件是原生 JS 写的，我们需要用 `useEffect` 在组件加载时把它添加到地图上。
 
-// 帮手B: 自动开盖标记 (AutoOpenMarker)
-// 任务: 只要我被画在地图上，我就自己打开盖子。
-function AutoOpenMarker({ position, children }) {
-  const markerRef = useRef(null);
+```javascript
+// 把这个组件放在 App 函数外面
+function RoutingControl() {
+  const map = useMapEvents({}); // 获取当前的地图实例
+
   useEffect(() => {
-    // 只有出生时执行一次：打开气泡
-    markerRef.current?.openPopup();
-  }, []);
-  return <Marker ...>{children}</Marker>;
-}
+    if (!map) return;
 
-/* === Part 3: 老板/主逻辑 (App) === */
-function App() {
+    // 创建原生控件
+    const routingControl = L.Routing.control({
+      waypoints: [
+        L.latLng(35.6586, 139.7454), // 起点 (例如东京塔)
+        L.latLng(35.71, 139.8107), // 终点 (例如晴空塔)
+      ],
+      routeWhileDragging: true, // 允许拖拽路线
+      show: true, // 显示右侧的文字导航面板
+      language: 'zh', // 尝试使用中文指示 (部分支持)
+    }).addTo(map); // 👈 这一步把控件加到地图上
 
-  // 1. 状态 (State) - 我们的数据库
-  // const [数组, 修改数组的方法] = useState(初始值)
-  const [markers, setMarkers] = useState([
-    { lat: 35.6586, lng: 139.7454, text: '初始位置' }
-  ]);
+    // 清理工作: 组件卸载时，把控件移除，防止重复添加
+    return () => map.removeControl(routingControl);
+  }, [map]);
 
-  // 2. 核心逻辑 (Add New Marker)
-  // 当用户点击地图时触发这个函数
-  const addNewMarker = async (latlng) => {
-    // A. 先占座 (Optimistic UI)
-    // 让用户觉得APP很快，不要干等
-    const tempId = Date.now();
-    const tempMarker = { ..., text: '正在获取地址... ⏳' };
-    setMarkers(prev => [...prev, tempMarker]); // 追加到数组末尾
-
-    // B. 去问路 (API Request)
-    try {
-       const res = await fetch(...); // 需等待网络
-       const data = await res.json();
-
-       // C. 回来填空 (Update UI)
-       // 遍历数组，找到刚才那个占座的 ID，把地址填进去
-       setMarkers(prev => prev.map(m =>
-          m.id === tempId ? { ...m, text: data.display_name } : m
-       ));
-    } catch (err) {
-       // D. 容错处理
-       // 万一断网了，也得告诉用户一声，不能装死
-       // ... 更新文字为 '失败'
-    }
-  };
-
-  /* === Part 4: 渲染界面 (View) === */
-  return (
-    <div style={{ height: '100vh' }}> {/* 全屏容器 */}
-
-      <MapContainer ...>
-        <TileLayer ... /> {/* 地图壁纸 */}
-
-        {/* 召唤帮手A：去监听点击！ */}
-        <ClickHandle onMapClick={addNewMarker} />
-
-        {/* 循环渲染：把数组里的每一条数据，变成地图上的图标 */}
-        {markers.map((marker, index) => (
-           <AutoOpenMarker key={index} ...>
-             <Popup>{marker.text}</Popup>
-           </AutoOpenMarker>
-        ))}
-      </MapContainer>
-    </div>
-  );
+  return null; // 不需要渲染任何 React 元素
 }
 ```
-## 💾 7. 下一步挑战：数据持久化
 
-目前数据刷新就丢。
-在 `App.jsx` 中使用 `localStorage` 可以解决这个问题。
+#### Step 3: 在地图里使用
 
----
+```jsx
+function App() {
+  return (
+    <MapContainer ...>
+      {/* ...其他组件... */}
+
+      {/* 👇 刚刚写的导航组件放这里 */}
+      <RoutingControl />
+
+    </MapContainer>
+  )
+}
+```
+
+### 💡 进阶思考
+
+现在的起点终点是写死的。
+**挑战**: 你能利用 `markers` 数组，把第一个标记当起点，第二个标记当终点吗？
+_(提示: 修改 `waypoints` 数组即可)_
